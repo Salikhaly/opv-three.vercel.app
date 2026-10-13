@@ -1,0 +1,94 @@
+# -*- coding: utf-8 -*-
+"""
+FastAPI-сервис парсера ПКБ/ГКБ.
+POST /parse  — multipart: token, file (кредитный PDF), pension (опц.)
+             → JSON с превью договоров + Excel в base64.
+GET  /health — проверка живости.
+Ничего не хранит: файлы обрабатываются в памяти/во временных и сразу удаляются.
+"""
+
+import logging
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+import parser_core
+import license as lic
+
+logging.basicConfig(level=logging.INFO)
+MAX_BYTES = 15 * 1024 * 1024  # 15 МБ
+
+app = FastAPI(title="Парсер ПКБ/ГКБ")
+
+# CORS: страница сервиса (Apps Script) обращается с другого домена
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],          # можно сузить до домена Apps Script
+    allow_methods=["POST", "GET", "OPTIONS"],
+    allow_headers=["*"],
+)
+
+
+# Vercel в зависимости от конфигурации может передать путь как «/parse»
+# либо как «/api/index/parse» (или просто «/api/index»). Нормализуем, чтобы
+# маршруты находились в любом случае и деплой не ломался от смены настроек.
+@app.middleware("http")
+async def _strip_vercel_prefix(request, call_next):
+    path = request.scope.get("path", "")
+    for prefix in ("/api/index", "/api"):
+        if path == prefix:
+            request.scope["path"] = "/"
+            break
+        if path.startswith(prefix + "/"):
+            request.scope["path"] = path[len(prefix):]
+            break
+    return await call_next(request)
+
+
+@app.get("/")
+def root():
+    """Короткая проверка живости — чтобы открытый в браузере адрес не пугал 404."""
+    return {"ok": True, "service": "Парсер ПКБ/ГКБ", "endpoints": ["/health", "/parse"]}
+
+
+@app.get("/health")
+def health():
+    return {"ok": True}
+
+
+@app.post("/parse")
+async def parse(
+    token: str = Form(""),
+    file: UploadFile = File(...),
+    pension: UploadFile = File(None),
+    pension_orgs: str = Form(""),
+):
+    # 1) доступ по подписке (сессия из веб-хаба)
+    auth = lic.check_token(token)
+    if not auth.get("ok"):
+        raise HTTPException(status_code=401, detail=auth.get("message", "Доступ запрещён"))
+
+    # 2) читаем файлы
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Пустой файл")
+    if len(data) > MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Файл больше 15 МБ")
+    pdata = await pension.read() if pension is not None else None
+    if pdata and len(pdata) > MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Пенсионный файл больше 15 МБ")
+
+    # 3) парсинг (ничего не сохраняем)
+    try:
+        result = parser_core.parse_report(data, pdata, pension_orgs=pension_orgs)
+    except ValueError as e:
+        return JSONResponse(status_code=422, content={"ok": False, "error": str(e)})
+    except Exception as e:
+        logging.exception("parse error")
+        raise HTTPException(status_code=500, detail="Ошибка обработки файла")
+
+    if not result.get("ok"):
+        return JSONResponse(status_code=422, content=result)
+
+    result["client"] = auth.get("clientName")
+    return result

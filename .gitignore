@@ -1,0 +1,13 @@
+# Configuration and generated/private exports
+.env
+.env.*
+.vercel/
+__pycache__/
+*.py[cod]
+.venv/
+preview.html
+preview_artifact.html
+PKB_service_bundle.zip
+# Existing Apps Script file contains a hardcoded licence secret.
+# Move that secret to Script Properties before committing this file.
+Code_additions.gs
