@@ -142,6 +142,7 @@ def parse_report(credit_pdf: Optional[bytes] = None,
             "iin": cd.get("iin") or (pension.get("iin") if pension else None),
             "fio": (pension.get("fio") if pension else None) or cd.get("fio"),
             "pkr": cd.get("pkr"),
+            "generated_at": cd.get("generated_at"),
             "srzp": srzp,
             "monthly_load": monthly,
             "counts": {
