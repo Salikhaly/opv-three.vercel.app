@@ -276,13 +276,19 @@ def restore_original_credits(output_path,template_path,cd,active,recent,old,revo
         for start,items in [(30,list(recent)+list(revoked)),(46,old)]:
             for r,c in enumerate(items[:10],start):
                 for col,val in [('B',c.creditor),('E',c.cessionary if parser.has_real_cession(c) else None),('G',c.end_date),('I',c.max_overdue_days),('J',c.max_overdue_amount)]:parser.safe_set(ws,f'{col}{r}',val)
+        for r in range(6,24):
+            ws.merge_cells(f'G{r}:H{r}');ws.merge_cells(f'I{r}:J{r}')
+        for r in list(range(30,40))+list(range(46,56)):
+            for left,right in [('B','D'),('E','F'),('G','H')]:ws.merge_cells(f'{left}{r}:{right}{r}')
+        for r,title in [(26,'ЗАВЕРШЁННЫЕ ДОГОВОРЫ'),(42,'ЗАВЕРШЁННЫЕ БОЛЕЕ 5 ЛЕТ')]:
+            ws.merge_cells(f'A{r}:J{r}');ws.cell(r,1,title).font=Font(name='Arial',size=9,bold=True)
         for col,width in zip('ABCDEFGHIJ',[4,13,17,11,11,11,7,6,8,12]):ws.column_dimensions[col].width=width
         for r in range(1,56):ws.row_dimensions[r].height=12
         ws.row_dimensions[1].height=28
         if not any('A1' in merged for merged in ws.merged_cells):ws.merge_cells('A1:J1')
         ws['A1'].font=Font(name='Arial',size=9,bold=True)
         ws.merge_cells('A2:J2');ws['A2']=fio;ws['A2'].font=Font(name='Arial',size=9,bold=True);ws['A2'].alignment=Alignment(horizontal='center',vertical='center');ws.row_dimensions[2].height=18
-        for r in [4,5,28,29,44,45]:ws.row_dimensions[r].height=18
+        for r in [4,5,26,28,29,42,44,45]:ws.row_dimensions[r].height=18
         for r in list(range(6,6+min(18,len(active))))+list(range(30,30+min(10,len(recent)+len(revoked))))+list(range(46,46+min(10,len(old)))):ws.row_dimensions[r].height=28
         ws.sheet_view.showGridLines=False;ws.page_setup.paperSize=ws.PAPERSIZE_A4;ws.page_setup.orientation='portrait';ws.page_setup.fitToWidth=1;ws.page_setup.fitToHeight=1
         ws.sheet_properties.pageSetUpPr=PageSetupProperties(fitToPage=True)
