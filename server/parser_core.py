@@ -40,7 +40,7 @@ def _write_temp(data: bytes, suffix: str) -> str:
     return path
 
 
-def parse_report(credit_pdf: bytes,
+def parse_report(credit_pdf: Optional[bytes] = None,
                  pension_pdf: Optional[bytes] = None,
                  enable_ocr: bool = False,
                  pension_orgs: Optional[str] = None,
@@ -54,23 +54,26 @@ def parse_report(credit_pdf: bytes,
     """
     import base64
 
-    tmp_credit = _write_temp(credit_pdf, ".pdf")
+    if not credit_pdf and not pension_pdf:
+        raise ValueError("Загрузите кредитный отчёт или пенсионную выписку.")
+    tmp_credit = _write_temp(credit_pdf, ".pdf") if credit_pdf else None
     tmp_pension = _write_temp(pension_pdf, ".pdf") if pension_pdf else None
     tmp_out = _write_temp(b"", ".xlsx")
     os.unlink(tmp_out)  # нужен только путь; write создаст заново
 
     try:
-        cd = parser.extract_any_credit_report(
-            pdf_path=Path(tmp_credit), enable_ocr=enable_ocr, ocr_lang="rus",
-            poppler_path=None, tesseract_cmd=None, tessdata_dir=None,
-            plumber_layout=False,
-        )
-        parser.validate_credit_data(cd, strict=False)
-
-        if not cd.get("iin") and not cd.get("pkr") and not cd.get("active"):
-            return {"ok": False, "error": "Не удалось прочитать отчёт. "
-                    "Проверьте, что это отчёт ПКБ (1cb.kz) или ГКБ/МКБ (mkb.kz) и что PDF текстовый."}
-
+        cd = {}
+        if tmp_credit:
+            cd = parser.extract_any_credit_report(
+                pdf_path=Path(tmp_credit), enable_ocr=enable_ocr, ocr_lang="rus",
+                poppler_path=None, tesseract_cmd=None, tessdata_dir=None,
+                plumber_layout=False,
+            )
+            parser.validate_credit_data(cd, strict=False)
+    
+            if not cd.get("iin") and not cd.get("pkr") and not cd.get("active"):
+                return {"ok": False, "error": "Не удалось прочитать отчёт. "
+                        "Проверьте, что это отчёт ПКБ (1cb.kz) или ГКБ/МКБ (mkb.kz) и что PDF текстовый."}
         pension = None
         srzp = 0
         warnings = []
@@ -131,8 +134,10 @@ def parse_report(credit_pdf: bytes,
             "ok": True,
             "warnings": warnings,
             "pension_organizations": pension_organizations,
-            "source": cd.get("source"),
-            "iin": cd.get("iin"),
+            "has_credit": bool(credit_pdf),
+            "has_pension": bool(pension_pdf),
+            "source": cd.get("source") or "pension",
+            "iin": cd.get("iin") or (pension.get("iin") if pension else None),
             "fio": (pension.get("fio") if pension else None) or cd.get("fio"),
             "pkr": cd.get("pkr"),
             "srzp": srzp,
