@@ -116,9 +116,10 @@ def parse_report(credit_pdf: Optional[bytes] = None,
         excel_bytes = None
         if include_excel:
             if print_layout:
-                from print_export import print_model, write_printable
+                from print_export import print_model, write_printable, restore_original_questionnaire
                 model = print_model(cd, pension, active, recent, old, revoked, srzp, bool(credit_pdf), bool(pension_pdf))
                 write_printable(tmp_out, model)
+                restore_original_questionnaire(tmp_out,TEMPLATE,pension,model["fio"],srzp)
             else:
                 parser.write_output_legacy_excel(
                     template_path=TEMPLATE, output_path=Path(tmp_out),
