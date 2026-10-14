@@ -191,3 +191,59 @@ def write_printable(output_path,model):
         ws.oddFooter.center.text='Страница &P из &N';ws.oddFooter.center.size=9
         ws.freeze_panes='A3'
     wb.save(output_path)
+
+
+def restore_original_questionnaire(output_path, template_path, pension, fio, srzp):
+    """Keep the user's questionnaire geometry and fit it to one A4 page."""
+    import tempfile
+    from copy import copy
+    from openpyxl import load_workbook
+    from openpyxl.styles import Font, Alignment, PatternFill
+    from openpyxl.worksheet.page import PageMargins
+    from openpyxl.worksheet.properties import PageSetupProperties
+    with tempfile.TemporaryDirectory() as directory:
+        source=Path(directory)/'questionnaire.xlsx'
+        source.write_bytes(Path(template_path).read_bytes())
+        if pension:parser.fill_anketa_from_pension(source,pension)
+        original=load_workbook(source)['Анкета']
+        wb=load_workbook(output_path)
+        del wb['Анкета'];ws=wb.create_sheet('Анкета',0)
+        for row in original:
+            for cell in row:
+                dst=ws.cell(cell.row,cell.column,cell.value)
+                if cell.has_style:
+                    dst.border=copy(cell.border);dst.fill=copy(cell.fill);dst.number_format=cell.number_format
+                dst.alignment=Alignment(horizontal=cell.alignment.horizontal,vertical='center',wrap_text=True)
+                dst.font=Font(name='Arial',size=9,bold=cell.font.bold,color='202A3D')
+        for merged in original.merged_cells:ws.merge_cells(str(merged))
+        for col,width in zip('ABCDEFGHIJ',[10,12,10,10,12,10,10,12,10,5]):ws.column_dimensions[col].width=width
+        last=max(43,original.max_row if pension else 43)
+        for n in range(1,last+1):ws.row_dimensions[n].height=13
+        for n in [2,4,10,14,15,17,21,22,23,27,28,44,45]:ws.row_dimensions[n].height=8
+        for merged in list(ws.merged_cells):
+            if merged.min_row==1:ws.unmerge_cells(str(merged))
+        ws.merge_cells('A1:J1');ws['A1']='АНКЕТА КЛИЕНТА';ws['A1'].font=Font(name='Arial',size=15,bold=True);ws['A1'].alignment=Alignment(horizontal='center',vertical='center');ws.row_dimensions[1].height=26
+        ws['B5']=fio or 'ФИО не распознано';ws.row_dimensions[5].height=20
+        if pension and pension.get('iin'):ws['B6']=str(pension['iin']);ws['B6'].number_format='@'
+        ws['A43']='СРЗП';ws['B43']=srzp if pension else 'Выписка не загружена';ws['B43'].number_format='#,##0';ws['B43'].font=Font(name='Arial',size=11,bold=True);ws.row_dimensions[43].height=21
+        for band in range(0,max(1,(len(parser.group_pension_by_org((pension or {}).get('rows') or []))+2)//3)):
+            top=29 if band==0 else 46+(band-1)*15
+            ws.row_dimensions[top].height=42
+            if band:
+                for left,right in [('A','C'),('D','F'),('G','I')]:
+                    rng=f'{left}{top}:{right}{top}'
+                    if rng not in str(ws.merged_cells):ws.merge_cells(rng)
+            for col in ['A','D','G']:
+                ws[f'{col}{top}'].font=Font(name='Arial',size=7,bold=True)
+                ws[f'{col}{top}'].alignment=Alignment(wrap_text=True,vertical='center')
+            head=top+1
+            for offset in [0,3,6]:
+                for j,label in enumerate(['Дата','Сумма, ₸','Период']):
+                    ws.cell(head,offset+j+1,label);ws.cell(head,offset+j+1).font=Font(name='Arial',size=8,bold=True)
+            ws.row_dimensions[head].height=15
+        ws.sheet_view.showGridLines=False
+        ws.page_setup.paperSize=ws.PAPERSIZE_A4;ws.page_setup.orientation='portrait';ws.page_setup.fitToWidth=1;ws.page_setup.fitToHeight=1
+        ws.sheet_properties.pageSetUpPr=PageSetupProperties(fitToPage=True)
+        ws.page_margins=PageMargins(left=.2,right=.2,top=.2,bottom=.2,header=.1,footer=.1)
+        ws.print_area=f'A1:J{last}';ws.print_options.horizontalCentered=True;ws.print_options.verticalCentered=False
+        wb.save(output_path)
