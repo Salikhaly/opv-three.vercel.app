@@ -63,6 +63,28 @@ class IntegrationTests(unittest.TestCase):
         self.assertTrue(result['ok'])
         self.assertIsNone(result['excel_b64'])
 
+    def test_print_layout_keeps_all_rows_and_a4_metadata(self):
+        from print_export import print_model, write_printable, client_filename
+        rs = rows()
+        rs.extend([parser.PensionRow('01.09.2026', 10000, '09.2026', 'Company 1', '000000000001', None) for _ in range(15)])
+        pension = dict(iin='000000000001', fio='Client Name', rows=rs)
+        model = print_model({}, pension, [], [], [], [], parser.calc_total_srzp(rs), False, True)
+        self.assertEqual(model['filename'], 'Client Name.xlsx')
+        self.assertEqual(client_filename('Client / Name'), 'Client Name.xlsx')
+        self.assertEqual(sum(r['values'][0] == '01.09.2026' for r in model['sheets'][0]['rows']), len(rs)-1)
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / 'print.xlsx'
+            write_printable(target, model)
+            wb = load_workbook(target)
+            self.assertEqual(wb.sheetnames, ['Анкета','Кредиты','Анализ'])
+            self.assertEqual(wb['Анкета']['D3'].value, pension['iin'])
+            self.assertEqual(wb['Анкета']['D3'].number_format, '@')
+            for sheet in wb:
+                self.assertEqual(str(sheet.page_setup.paperSize), '9')
+                self.assertEqual(sheet.page_setup.fitToWidth, 1)
+                self.assertEqual(sheet.page_setup.fitToHeight, 0)
+                self.assertTrue(sheet.print_area)
+
     def test_orgs_returns_selection(self):
         rs = rows()
         self.assertEqual(len(parser.list_pension_orgs(rs)), 4)
