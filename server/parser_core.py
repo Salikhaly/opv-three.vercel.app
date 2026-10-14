@@ -45,7 +45,8 @@ def parse_report(credit_pdf: Optional[bytes] = None,
                  enable_ocr: bool = False,
                  pension_orgs: Optional[str] = None,
                  credit_indices: Optional[str] = None,
-                 include_excel: bool = True) -> Dict[str, Any]:
+                 include_excel: bool = True,
+                 print_layout: bool = False) -> Dict[str, Any]:
     """
     Возвращает: {
       ok, source, iin, fio, pkr, counts, monthly_load,
@@ -114,15 +115,21 @@ def parse_report(credit_pdf: Optional[bytes] = None,
 
         excel_bytes = None
         if include_excel:
-            parser.write_output_legacy_excel(
-                template_path=TEMPLATE, output_path=Path(tmp_out),
-                pkr=cd.get("pkr"), active=active, recent=recent, old=old,
-                revoked=revoked, blank_zero=True, only_loans_active=False,
-                srzp=srzp,
-            )
-            if pension:
-                parser.fill_anketa_from_pension(Path(tmp_out), pension, sort_rows=False)
-    
+            if print_layout:
+                from print_export import print_model, write_printable
+                model = print_model(cd, pension, active, recent, old, revoked, srzp, bool(credit_pdf), bool(pension_pdf))
+                write_printable(tmp_out, model)
+            else:
+                parser.write_output_legacy_excel(
+                    template_path=TEMPLATE, output_path=Path(tmp_out),
+                    pkr=cd.get("pkr"), active=active, recent=recent, old=old,
+                    revoked=revoked, blank_zero=True, only_loans_active=False,
+                    srzp=srzp,
+                )
+                if pension:
+                    parser.fill_anketa_from_pension(Path(tmp_out), pension, sort_rows=False)
+        
+
             with open(tmp_out, "rb") as f:
                 excel_bytes = f.read()
         monthly = sum((x.periodic_payment or 0) for x in active)
@@ -153,6 +160,7 @@ def parse_report(credit_pdf: Optional[bytes] = None,
             "active": [_contract_to_dict(c) for c in active],
             "completed_recent": [_contract_to_dict(c) for c in recent],
             "completed_old": [_contract_to_dict(c) for c in old],
+            "excel_filename": __import__('print_export').client_filename((pension.get('fio') if pension else None) or cd.get('fio')),
             "excel_b64": base64.b64encode(excel_bytes).decode("ascii") if excel_bytes is not None else None,
         }
     finally:
