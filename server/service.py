@@ -77,9 +77,9 @@ async def parse(
     # 2) читаем файлы
     data = await file.read() if file is not None else None
     if file is not None and not data:
-        raise HTTPException(status_code=400, detail="Пустой файл")
+        raise HTTPException(status_code=400, detail="Кредитный отчёт: пустой файл")
     if data and len(data) > MAX_BYTES:
-        raise HTTPException(status_code=413, detail="Файл больше 15 МБ")
+        raise HTTPException(status_code=413, detail="Кредитный отчёт: файл больше 15 МБ")
     pdata = await pension.read() if pension is not None else None
     if pension is not None and not pdata:
         raise HTTPException(status_code=400, detail="Пустой пенсионный файл")
@@ -95,7 +95,7 @@ async def parse(
         return JSONResponse(status_code=422, content={"ok": False, "error": str(e)})
     except Exception as e:
         logging.exception("parse error")
-        raise HTTPException(status_code=500, detail="Ошибка обработки файла")
+        raise HTTPException(status_code=500, detail="Не удалось обработать документы. Повторите загрузку; при повторной ошибке загрузите PDF по одному.")
 
     if not result.get("ok"):
         return JSONResponse(status_code=422, content=result)
