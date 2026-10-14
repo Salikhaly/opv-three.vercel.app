@@ -117,6 +117,14 @@ def print_model(cd,pension,active,recent,old,revoked,srzp,has_credit,has_pension
     b.kv('ИИН пенсионной выписки',str((pension or {}).get('iin') or 'Не загружена'))
     if has_credit and has_pension and cd.get('iin') and (pension or {}).get('iin') and cd['iin']!=pension['iin']:
         b.full('ИИН источников различаются. Документы обработаны отдельно; объединение не блокируется.','note',42)
+    if has_pension:
+        b.kv('Конец периода ОПВ', (pension or {}).get('period_end') or 'Не распознан')
+        recency = (pension or {}).get('recency_organizations') or []
+        for org in recency:
+            state = org.get('recency_status')
+            label = 'в пределах 55 дней' if state == 'ok' else 'БОЛЕЕ 55 ДНЕЙ' if state == 'stale' else 'дата после периода' if state == 'after_period' else 'не удалось проверить'
+            gap = org.get('days_since_last_payment')
+            b.kv('Последнее ОПВ · '+str(org['key']), str(org.get('last_payment_date') or 'Не распознано')+' · '+(str(gap)+' дн. · ' if gap is not None else '')+label)
     b.section('КЛЮЧЕВЫЕ ПОКАЗАТЕЛИ',220)
     for label,val in [('ПКР',cd.get('pkr') if cd.get('pkr') is not None else 'Не найден'),('Учтено действующих договоров',len(active) if has_credit else 'Нет отчёта'),('Остаток долга, ₸',out if has_credit else 'Нет отчёта'),('Платежи в месяц, ₸',load if has_credit else 'Нет отчёта'),('СРЗП выбранных организаций, ₸',srzp if has_pension else 'Нет выписки'),('Организаций в расчёте',len(groups) if has_pension else 'Нет выписки')]:b.kv(label,val)
     if has_credit and has_pension:
