@@ -82,8 +82,31 @@ class IntegrationTests(unittest.TestCase):
             for sheet in wb:
                 self.assertEqual(str(sheet.page_setup.paperSize), '9')
                 self.assertEqual(sheet.page_setup.fitToWidth, 1)
-                self.assertEqual(sheet.page_setup.fitToHeight, 0)
+                self.assertEqual(sheet.page_setup.fitToHeight, 1 if sheet.title == "Анализ" else 0)
                 self.assertTrue(sheet.print_area)
+
+    def test_original_layout_alignment_and_compact_analysis(self):
+        from print_export import print_model, write_printable, restore_original_questionnaire, restore_original_credits
+        c = parser.parse_contract_block('КОНТРАКТ 1ЗАЙМ\nСумма периодического платежа: 10000 KZT')
+        c.current_overdue_days=2; c.current_overdue_amount=3456; c.max_overdue_days=7; c.max_overdue_amount=890
+        cd=dict(active=[c],pkr=700)
+        pension=dict(iin='000000000001',fio='Test',rows=rows())
+        model=print_model(cd,pension,[c],[c],[],[],100000,True,True)
+        with tempfile.TemporaryDirectory() as directory:
+            target=Path(directory)/'print.xlsx'
+            write_printable(target,model)
+            restore_original_questionnaire(target,parser_core.TEMPLATE,pension,'Test',100000)
+            restore_original_credits(target,parser_core.TEMPLATE,cd,[c],[c],[],[],'Test')
+            w=load_workbook(target)
+            self.assertEqual(w['Кредиты']['G6'].value,2)
+            self.assertEqual(w['Кредиты']['I6'].value,3456)
+            self.assertEqual(w['Кредиты']['I30'].value,7)
+            self.assertEqual(w['Кредиты']['J30'].value,890)
+            self.assertEqual(w['Анкета']['B43'].value,100000)
+            for s in w:
+                self.assertEqual(str(s.page_setup.paperSize),'9')
+                self.assertEqual(s.page_setup.fitToWidth,1)
+                self.assertEqual(s.page_setup.fitToHeight,1)
 
     def test_orgs_returns_selection(self):
         rs = rows()
