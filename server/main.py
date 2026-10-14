@@ -682,8 +682,9 @@ def extract_credit_report(
     tesseract_cmd: Optional[str],
     tessdata_dir: Optional[str],
     plumber_layout: bool = False,
+    pages_text: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    pages = extract_pages_text(
+    pages = pages_text if pages_text is not None else extract_pages_text(
         pdf_path,
         enable_ocr=enable_ocr,
         ocr_lang=ocr_lang,
@@ -978,8 +979,9 @@ def extract_gkb_report(
     tesseract_cmd: Optional[str] = None,
     tessdata_dir: Optional[str] = None,
     plumber_layout: bool = False,
+    pages_text: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    pages = extract_pages_text(
+    pages = pages_text if pages_text is not None else extract_pages_text(
         pdf_path,
         enable_ocr=enable_ocr,
         ocr_lang=ocr_lang,
@@ -1077,10 +1079,11 @@ def detect_report_type(pdf_path: Path,
                        ocr_lang: str = "rus",
                        poppler_path: Optional[str] = None,
                        tesseract_cmd: Optional[str] = None,
-                       tessdata_dir: Optional[str] = None) -> str:
+                       tessdata_dir: Optional[str] = None,
+                       pages_text: Optional[List[str]] = None) -> str:
     """Определяет бюро по тексту первых страниц: 'pkb' | 'gkb' | 'unknown'."""
     try:
-        pages = extract_pages_text(
+        pages = pages_text if pages_text is not None else extract_pages_text(
             pdf_path, enable_ocr=enable_ocr, ocr_lang=ocr_lang,
             poppler_path=poppler_path, tesseract_cmd=tesseract_cmd,
             tessdata_dir=tessdata_dir, plumber_layout=False,
@@ -1117,17 +1120,24 @@ def extract_any_credit_report(
     plumber_layout: bool = False,
 ) -> Dict[str, Any]:
     """Единая точка входа: сама определяет ПКБ или ГКБ и парсит соответственно."""
+    # Extract once per request: report detection and parsing use identical text.
+    # Do not cache financial documents globally or change the extraction engine.
+    pages = extract_pages_text(
+        pdf_path, enable_ocr=enable_ocr, ocr_lang=ocr_lang,
+        poppler_path=poppler_path, tesseract_cmd=tesseract_cmd,
+        tessdata_dir=tessdata_dir, plumber_layout=plumber_layout,
+    )
     kind = detect_report_type(
         pdf_path, enable_ocr=enable_ocr, ocr_lang=ocr_lang,
         poppler_path=poppler_path, tesseract_cmd=tesseract_cmd,
-        tessdata_dir=tessdata_dir,
+        tessdata_dir=tessdata_dir, pages_text=pages,
     )
     if kind == "gkb":
         LOGGER.info("Тип отчёта: ГКБ/МКБ")
         gkb = extract_gkb_report(
             pdf_path, enable_ocr=enable_ocr, ocr_lang="kaz+rus",
             poppler_path=poppler_path, tesseract_cmd=tesseract_cmd,
-            tessdata_dir=tessdata_dir, plumber_layout=plumber_layout,
+            tessdata_dir=tessdata_dir, plumber_layout=plumber_layout, pages_text=None if enable_ocr else pages,
         )
         if not (gkb.get("active") or gkb.get("completed_recent") or gkb.get("completed_old")):
             raise ValueError(
@@ -1140,7 +1150,7 @@ def extract_any_credit_report(
     data = extract_credit_report(
         pdf_path, enable_ocr=enable_ocr, ocr_lang=ocr_lang,
         poppler_path=poppler_path, tesseract_cmd=tesseract_cmd,
-        tessdata_dir=tessdata_dir, plumber_layout=plumber_layout,
+        tessdata_dir=tessdata_dir, plumber_layout=plumber_layout, pages_text=pages,
     )
     data.setdefault("source", "pkb")
     data.setdefault("fio", None)
