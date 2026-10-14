@@ -44,7 +44,8 @@ def parse_report(credit_pdf: Optional[bytes] = None,
                  pension_pdf: Optional[bytes] = None,
                  enable_ocr: bool = False,
                  pension_orgs: Optional[str] = None,
-                 credit_indices: Optional[str] = None) -> Dict[str, Any]:
+                 credit_indices: Optional[str] = None,
+                 include_excel: bool = True) -> Dict[str, Any]:
     """
     Возвращает: {
       ok, source, iin, fio, pkr, counts, monthly_load,
@@ -111,18 +112,19 @@ def parse_report(credit_pdf: Optional[bytes] = None,
         old = cd.get("completed_old") or []
         revoked = cd.get("revoked") or []
 
-        parser.write_output_legacy_excel(
-            template_path=TEMPLATE, output_path=Path(tmp_out),
-            pkr=cd.get("pkr"), active=active, recent=recent, old=old,
-            revoked=revoked, blank_zero=True, only_loans_active=False,
-            srzp=srzp,
-        )
-        if pension:
-            parser.fill_anketa_from_pension(Path(tmp_out), pension, sort_rows=False)
-
-        with open(tmp_out, "rb") as f:
-            excel_bytes = f.read()
-
+        excel_bytes = None
+        if include_excel:
+            parser.write_output_legacy_excel(
+                template_path=TEMPLATE, output_path=Path(tmp_out),
+                pkr=cd.get("pkr"), active=active, recent=recent, old=old,
+                revoked=revoked, blank_zero=True, only_loans_active=False,
+                srzp=srzp,
+            )
+            if pension:
+                parser.fill_anketa_from_pension(Path(tmp_out), pension, sort_rows=False)
+    
+            with open(tmp_out, "rb") as f:
+                excel_bytes = f.read()
         monthly = sum((x.periodic_payment or 0) for x in active)
 
         for label, count, limit in (("Действующие договоры", len(active), 18),
@@ -150,7 +152,7 @@ def parse_report(credit_pdf: Optional[bytes] = None,
             "active": [_contract_to_dict(c) for c in active],
             "completed_recent": [_contract_to_dict(c) for c in recent],
             "completed_old": [_contract_to_dict(c) for c in old],
-            "excel_b64": base64.b64encode(excel_bytes).decode("ascii"),
+            "excel_b64": base64.b64encode(excel_bytes).decode("ascii") if excel_bytes is not None else None,
         }
     finally:
         for p in (tmp_credit, tmp_pension, tmp_out):
