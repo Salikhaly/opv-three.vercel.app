@@ -90,7 +90,7 @@ async def parse(
 
     # 3) парсинг (ничего не сохраняем)
     try:
-        result = await run_in_threadpool(parser_core.parse_report, data, pdata, pension_orgs=pension_orgs, credit_indices=credit_indices, include_excel=include_excel)
+        result = await run_in_threadpool(parser_core.parse_report, data, pdata, pension_orgs=pension_orgs, credit_indices=credit_indices, include_excel=include_excel, print_layout=True)
     except ValueError as e:
         return JSONResponse(status_code=422, content={"ok": False, "error": str(e)})
     except Exception as e:
