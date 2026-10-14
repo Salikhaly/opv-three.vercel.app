@@ -62,6 +62,7 @@ async def parse(
     file: UploadFile = File(...),
     pension: UploadFile = File(None),
     pension_orgs: str = Form(""),
+    credit_indices: str = Form(""),
 ):
     # 1) доступ по подписке (сессия из веб-хаба)
     auth = lic.check_token(token)
@@ -80,7 +81,7 @@ async def parse(
 
     # 3) парсинг (ничего не сохраняем)
     try:
-        result = parser_core.parse_report(data, pdata, pension_orgs=pension_orgs)
+        result = parser_core.parse_report(data, pdata, pension_orgs=pension_orgs, credit_indices=credit_indices)
     except ValueError as e:
         return JSONResponse(status_code=422, content={"ok": False, "error": str(e)})
     except Exception as e:
