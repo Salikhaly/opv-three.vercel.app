@@ -59,7 +59,7 @@ def health():
 @app.post("/parse")
 async def parse(
     token: str = Form(""),
-    file: UploadFile = File(...),
+    file: UploadFile = File(None),
     pension: UploadFile = File(None),
     pension_orgs: str = Form(""),
     credit_indices: str = Form(""),
@@ -70,12 +70,16 @@ async def parse(
         raise HTTPException(status_code=401, detail=auth.get("message", "Доступ запрещён"))
 
     # 2) читаем файлы
-    data = await file.read()
-    if not data:
+    data = await file.read() if file is not None else None
+    if file is not None and not data:
         raise HTTPException(status_code=400, detail="Пустой файл")
-    if len(data) > MAX_BYTES:
+    if data and len(data) > MAX_BYTES:
         raise HTTPException(status_code=413, detail="Файл больше 15 МБ")
     pdata = await pension.read() if pension is not None else None
+    if pension is not None and not pdata:
+        raise HTTPException(status_code=400, detail="Пустой пенсионный файл")
+    if not data and not pdata:
+        raise HTTPException(status_code=400, detail="Загрузите кредитный отчёт или пенсионную выписку")
     if pdata and len(pdata) > MAX_BYTES:
         raise HTTPException(status_code=413, detail="Пенсионный файл больше 15 МБ")
 
