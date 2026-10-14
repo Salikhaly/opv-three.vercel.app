@@ -29,6 +29,17 @@ def rows():
 
 
 class IntegrationTests(unittest.TestCase):
+    def test_credit_text_is_extracted_once_per_request(self):
+        pages=['ПЕРСОНАЛЬНЫЙ КРЕДИТНЫЙ ОТЧЕТ\nИИН: 000000000001\nПКР: 700\nДЕЙСТВУЮЩИЕ ДОГОВОРА\nКОНТРАКТ 1ЗАЙМ\nИсточник информации (Кредитор): Тест Банк\nСумма периодического платежа: 10000 KZT\nНепогашенная сумма по кредиту: 50000 KZT\nЗАВЕРШЕННЫЕ ДОГОВОРЫ']
+        options=dict(enable_ocr=False,ocr_lang='rus',poppler_path=None,tesseract_cmd=None,tessdata_dir=None)
+        expected=parser.extract_credit_report(Path('unused.pdf'),pages_text=pages,**options)
+        with patch.object(parser,'extract_pages_text',return_value=pages) as extraction:
+            result=parser.extract_any_credit_report(Path('unused.pdf'),**options)
+        extraction.assert_called_once()
+        self.assertEqual(result['active'],expected['active'])
+        self.assertEqual(result['iin'],expected['iin'])
+        self.assertEqual(result['pkr'],expected['pkr'])
+
     def test_pension_recency_55_day_boundary(self):
         from datetime import date, timedelta
         end = date(2026, 10, 5)
