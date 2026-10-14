@@ -33,6 +33,39 @@ def _contract_to_dict(c) -> Dict[str, Any]:
     }
 
 
+def pension_recency(pension, organizations):
+    """Compare last positive, non-returned receipt with statement period end."""
+    import re
+    from datetime import datetime
+    def date(value):
+        try:
+            return datetime.strptime(str(value), "%d.%m.%Y").date()
+        except (ValueError, TypeError):
+            return None
+    period = str(pension.get("period") or "")
+    dates = re.findall(r"\d{2}\.\d{2}\.\d{4}", period)
+    end = date(dates[-1]) if len(dates) >= 2 else None
+    groups = parser.group_pension_by_org(pension.get("rows") or [])
+    messages = []
+    if end is None:
+        messages.append("Пенсионная выписка: дата окончания периода не распознана. Проверка последних поступлений по правилу 55 дней недоступна.")
+    for org in organizations:
+        receipts = [date(row.date) for row in groups.get(org["key"], []) if row.amount is not None and row.amount > 0]
+        receipts = [d for d in receipts if d is not None]
+        last = max(receipts) if receipts else None
+        gap = (end - last).days if end and last else None
+        status = "unknown" if gap is None else "after_period" if gap < 0 else "stale" if gap > 55 else "ok"
+        org.update(last_payment_date=last.strftime("%d.%m.%Y") if last else None,
+                   days_since_last_payment=gap, recency_status=status, recency_ok=status == "ok")
+        if status == "stale":
+            messages.append(f"{org['name']}: последнее поступление {org['last_payment_date']}; конец периода {end.strftime('%d.%m.%Y')}; разница {gap} дней — превышает 55 дней.")
+        elif status == "after_period":
+            messages.append(f"{org['name']}: последнее поступление {org['last_payment_date']} позже окончания периода {end.strftime('%d.%m.%Y')}. Проверьте даты в документе.")
+        elif status == "unknown" and end:
+            messages.append(f"{org['name']}: дата последнего поступления не распознана; правило 55 дней проверить нельзя.")
+    return end.strftime("%d.%m.%Y") if end else None, messages
+
+
 def _write_temp(data: bytes, suffix: str) -> str:
     fd, path = tempfile.mkstemp(suffix=suffix)
     with os.fdopen(fd, "wb") as f:
@@ -80,6 +113,7 @@ def parse_report(credit_pdf: Optional[bytes] = None,
             if not cd.get("iin") and not cd.get("pkr") and not cd.get("active"):
                 return {"ok": False, "error": "Кредитный отчёт: не удалось прочитать данные. "
                         "Проверьте, что это отчёт ПКБ (1cb.kz) или ГКБ/МКБ (mkb.kz) и что PDF текстовый."}
+        pension_period_end = None
         pension = None
         srzp = 0
         warnings = []
@@ -101,6 +135,10 @@ def parse_report(credit_pdf: Optional[bytes] = None,
                 if x.amount is None or x.amount < 0:
                     review_warnings.append(f"Пенсионная выписка: проверьте сумму поступления от {x.date}.")
             pension_organizations = parser.list_pension_orgs(pension["rows"])
+            pension_period_end, recency_messages = pension_recency(pension, pension_organizations)
+            review_warnings.extend(recency_messages)
+            pension["period_end"] = pension_period_end
+            pension["recency_organizations"] = pension_organizations
             pension["rows"] = [] if pension_orgs == "none" else parser.select_pension_orgs(pension["rows"], pension_orgs)
             srzp = parser.calc_total_srzp(pension["rows"])
             selected_keys = set(parser.group_pension_by_org(pension["rows"]))
@@ -167,6 +205,8 @@ def parse_report(credit_pdf: Optional[bytes] = None,
             "review_warnings": review_warnings,
             "print_html": __import__("print_preview").workbook_html(excel_bytes, pension.get("fio") if pension else cd.get("fio") or "Анкета клиента") if excel_bytes is not None and print_layout else None,
             "pension_organizations": pension_organizations,
+            "pension_period": pension.get("period") if pension else None,
+            "pension_period_end": pension_period_end,
             "has_credit": bool(credit_pdf),
             "has_pension": bool(pension_pdf),
             "source": cd.get("source") or "pension",
