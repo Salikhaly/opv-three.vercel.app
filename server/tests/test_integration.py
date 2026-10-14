@@ -29,6 +29,27 @@ def rows():
 
 
 class IntegrationTests(unittest.TestCase):
+    def test_pension_recency_55_day_boundary(self):
+        from datetime import date, timedelta
+        end = date(2026, 10, 5)
+        rr = [parser.PensionRow((end-timedelta(days=n)).strftime('%d.%m.%Y'), 10000, '08.2026', f'Org {n}', str(n), None) for n in [54,55,56]]
+        # Returned receipts and zero amounts must not replace the last actual payment.
+        rr += [parser.PensionRow(end.strftime('%d.%m.%Y'), 10000, '10.2026', 'Org 56', '56', 'ВОЗВРАЩЕН'), parser.PensionRow(end.strftime('%d.%m.%Y'), 0, '10.2026', 'Org 56', '56', None)]
+        orgs = parser.list_pension_orgs(rr)
+        period, messages = parser_core.pension_recency({'period':'05.04.2026 - 05.10.2026','rows':rr}, orgs)
+        self.assertEqual(period,'05.10.2026')
+        checks = {o['key']:o for o in orgs}
+        self.assertTrue(checks['54']['recency_ok']); self.assertTrue(checks['55']['recency_ok'])
+        self.assertEqual(checks['56']['recency_status'],'stale'); self.assertEqual(checks['56']['days_since_last_payment'],56)
+        self.assertEqual(len(messages),1)
+        self.assertIn('56 дней',messages[0])
+        period, messages = parser_core.pension_recency({'rows':rr},orgs)
+        self.assertIsNone(period);self.assertTrue(messages);self.assertEqual(orgs[0]['recency_status'],'unknown')
+        future = [parser.PensionRow('06.10.2026', 1, None, 'Future', 'future', None)]
+        orgs = parser.list_pension_orgs(future)
+        parser_core.pension_recency({'period':'05.04.2026 - 05.10.2026','rows':future},orgs)
+        self.assertEqual(orgs[0]['recency_status'],'after_period')
+
     def test_pension_only_and_missing_files(self):
         pension = dict(iin='000000000002', fio='Test pension', rows=rows())
         with patch.object(parser, 'extract_any_credit_report') as credit, \
