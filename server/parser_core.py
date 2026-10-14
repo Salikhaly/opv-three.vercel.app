@@ -64,17 +64,21 @@ def parse_report(credit_pdf: Optional[bytes] = None,
     os.unlink(tmp_out)  # нужен только путь; write создаст заново
 
     try:
+        review_warnings = []
         cd = {}
         if tmp_credit:
-            cd = parser.extract_any_credit_report(
-                pdf_path=Path(tmp_credit), enable_ocr=enable_ocr, ocr_lang="rus",
-                poppler_path=None, tesseract_cmd=None, tessdata_dir=None,
-                plumber_layout=False,
-            )
+            try:
+                cd = parser.extract_any_credit_report(
+                    pdf_path=Path(tmp_credit), enable_ocr=enable_ocr, ocr_lang="rus",
+                    poppler_path=None, tesseract_cmd=None, tessdata_dir=None,
+                    plumber_layout=False,
+                )
+            except Exception as exc:
+                raise ValueError("Кредитный отчёт: PDF повреждён, защищён паролем или не содержит читаемого текста. Проверьте файл.") from exc
             parser.validate_credit_data(cd, strict=False)
     
             if not cd.get("iin") and not cd.get("pkr") and not cd.get("active"):
-                return {"ok": False, "error": "Не удалось прочитать отчёт. "
+                return {"ok": False, "error": "Кредитный отчёт: не удалось прочитать данные. "
                         "Проверьте, что это отчёт ПКБ (1cb.kz) или ГКБ/МКБ (mkb.kz) и что PDF текстовый."}
         pension = None
         srzp = 0
@@ -88,6 +92,14 @@ def parse_report(credit_pdf: Optional[bytes] = None,
                 return {"ok": False, "error": "Не удалось прочитать пенсионную выписку. Проверьте файл PDF."}
             if not pension.get("rows"):
                 return {"ok": False, "error": "В пенсионной выписке не найдены платежи."}
+            from collections import Counter
+            identities = Counter((x.date, x.period, x.sender_bin or x.sender, x.amount, x.status) for x in pension["rows"])
+            for key, count in identities.items():
+                if count > 1:
+                    review_warnings.append(f"Пенсионная выписка: {count} одинаковых поступления от {key[0]}, период {key[1] or 'не указан'}, сумма {key[3]}. Сравните с оригиналом; суммы учтены как в файле.")
+            for x in pension["rows"]:
+                if x.amount is None or x.amount < 0:
+                    review_warnings.append(f"Пенсионная выписка: проверьте сумму поступления от {x.date}.")
             pension_organizations = parser.list_pension_orgs(pension["rows"])
             pension["rows"] = [] if pension_orgs == "none" else parser.select_pension_orgs(pension["rows"], pension_orgs)
             srzp = parser.calc_total_srzp(pension["rows"])
@@ -132,6 +144,14 @@ def parse_report(credit_pdf: Optional[bytes] = None,
                     parser.fill_anketa_from_pension(Path(tmp_out), pension, sort_rows=False)
         
 
+            if print_layout:
+                from openpyxl import load_workbook
+                workbook = load_workbook(tmp_out)
+                for sheet in workbook:
+                    sheet.oddHeader.left.text = "BRE Calc · BEREKELY EREKE"
+                    sheet.oddHeader.left.size = 8
+                    sheet.oddHeader.left.color = "7623B6"
+                workbook.save(tmp_out)
             with open(tmp_out, "rb") as f:
                 excel_bytes = f.read()
         monthly = sum((x.periodic_payment or 0) for x in active)
@@ -144,6 +164,8 @@ def parse_report(credit_pdf: Optional[bytes] = None,
         return {
             "ok": True,
             "warnings": warnings,
+            "review_warnings": review_warnings,
+            "print_html": __import__("print_preview").workbook_html(excel_bytes, pension.get("fio") if pension else cd.get("fio") or "Анкета клиента") if excel_bytes is not None and print_layout else None,
             "pension_organizations": pension_organizations,
             "has_credit": bool(credit_pdf),
             "has_pension": bool(pension_pdf),
