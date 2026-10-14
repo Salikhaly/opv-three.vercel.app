@@ -43,6 +43,14 @@ class IntegrationTests(unittest.TestCase):
         self.assertIsNone(parser.parse_cessionary('Наименование цессионария :\nАО Чужой банк'))
         self.assertIn('Эксперт', parser.parse_cessionary('Наименование цессионария : ТОО "Эксперт плюс"'))
 
+    def test_split_creditor_label_in_multicolumn_report(self):
+        block = 'Источник ТОО "Микрофинансовая организация Общая сумма кредита: 145000 KZT\nинформации "Sofi Finance" (Софи финанс) Сумма просроченных взносов: 0 KZT\n(Кредитор)\nИнформация по состоянию на: 28.02.2023'
+        name = parser.parse_creditor(block)
+        self.assertIn('Sofi Finance', name)
+        self.assertNotIn('145000', name)
+        self.assertNotIn('Сумма', name)
+        self.assertIsNone(parser.parse_creditor('Источник информации: —\nДата: 28.02.2023'))
+
     def test_wrapped_pdf_cleanup_success_and_error(self):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / 'signed.pdf'
