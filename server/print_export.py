@@ -98,7 +98,10 @@ def print_model(cd,pension,active,recent,old,revoked,srzp,has_credit,has_pension
         for n,x in enumerate(contracts,1):
             c.section(f'{n}. {x.creditor or "Кредитор не распознан"}',required=430)
             c.kv('Вид финансирования',x.financing_type or 'Не распознан')
-            c.kv('Статус договора',x.status or 'Не распознан',height=42)
+            status=x.status or 'Не распознан'
+            if re.search(r'Классификация субъекта|Номер договора|Просроченный основной долг',status,re.I):
+                status='Не распознан: проверьте в исходном PDF'
+            c.kv('Статус договора',status,height=42)
             if parser.contract_has_cession(x):
                 c.full('БЫЛА ПЕРЕУСТУПКА ДОЛГА (ЦЕССИЯ)','risk',34)
                 c.kv('Цессионарий',x.cessionary or 'Не распознан',height=42)
