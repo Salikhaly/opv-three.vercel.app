@@ -43,7 +43,8 @@ def _write_temp(data: bytes, suffix: str) -> str:
 def parse_report(credit_pdf: bytes,
                  pension_pdf: Optional[bytes] = None,
                  enable_ocr: bool = False,
-                 pension_orgs: Optional[str] = None) -> Dict[str, Any]:
+                 pension_orgs: Optional[str] = None,
+                 credit_indices: Optional[str] = None) -> Dict[str, Any]:
     """
     Возвращает: {
       ok, source, iin, fio, pkr, counts, monthly_load,
@@ -83,7 +84,7 @@ def parse_report(credit_pdf: bytes,
             if not pension.get("rows"):
                 return {"ok": False, "error": "В пенсионной выписке не найдены платежи."}
             pension_organizations = parser.list_pension_orgs(pension["rows"])
-            pension["rows"] = parser.select_pension_orgs(pension["rows"], pension_orgs)
+            pension["rows"] = [] if pension_orgs == "none" else parser.select_pension_orgs(pension["rows"], pension_orgs)
             srzp = parser.calc_total_srzp(pension["rows"])
             selected_keys = set(parser.group_pension_by_org(pension["rows"]))
             for key, org_rows in parser.group_pension_by_org(pension["rows"]).items():
@@ -93,6 +94,16 @@ def parse_report(credit_pdf: bytes,
                 org["selected"] = org["key"] in selected_keys
 
         active = cd.get("active") or []
+        if credit_indices == "none":
+            active = []
+        elif credit_indices:
+            try:
+                indices = {int(x.strip()) for x in credit_indices.split(",")}
+            except ValueError:
+                raise ValueError("Некорректный выбор кредитов.")
+            if any(i < 0 or i >= len(active) for i in indices):
+                raise ValueError("Выбранный кредит не найден в отчёте.")
+            active = [c for i, c in enumerate(active) if i in indices]
         recent = cd.get("completed_recent") or []
         old = cd.get("completed_old") or []
         revoked = cd.get("revoked") or []
