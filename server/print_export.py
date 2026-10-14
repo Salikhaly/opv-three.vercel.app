@@ -48,7 +48,8 @@ def print_model(cd,pension,active,recent,old,revoked,srzp,has_credit,has_pension
     fio=(pension or {}).get('fio') or cd.get('fio') or 'ФИО не распознано'
     iin=(pension or {}).get('iin') or cd.get('iin') or 'Не распознан'
     date=cd.get('generated_at') or 'Не распознана'
-    all_c=list(active)+list(recent)+list(old)+list(revoked)
+    all_active=cd.get("active") or []
+    all_c=list(all_active)+list(recent)+list(old)+list(revoked)
     load=sum(c.periodic_payment or 0 for c in active)
     out=sum(c.outstanding or 0 for c in active)
     a=Sheet('Анкета')
@@ -122,7 +123,7 @@ def print_model(cd,pension,active,recent,old,revoked,srzp,has_credit,has_pension
         b.kv('Остаётся после платежей, ₸',srzp-load,'total')
         b.kv('Нагрузка к доходу, %',round(load/srzp*100,1) if srzp>0 else 'Доход равен нулю')
     b.section('РИСК-ПРОФИЛЬ',160)
-    now=[x for x in active if (x.current_overdue_days or 0)>0 or (x.current_overdue_amount or 0)>0]
+    now=[x for x in all_active if (x.current_overdue_days or 0)>0 or (x.current_overdue_amount or 0)>0]
     cess=[x for x in all_c if parser.contract_has_cession(x)]
     b.kv('Текущая просрочка: договоров',len(now) if has_credit else 'Нет отчёта')
     b.kv('Историческая просрочка: дней',max([x.max_overdue_days or 0 for x in all_c]+[0]) if has_credit else 'Нет отчёта')
@@ -190,7 +191,27 @@ def write_printable(output_path,model):
         ws.print_area=f'A1:H{len(spec["rows"])}';ws.print_options.horizontalCentered=True
         ws.oddFooter.center.text='Страница &P из &N';ws.oddFooter.center.size=9
         ws.freeze_panes='A3'
+    compact_analysis(wb)
     wb.save(output_path)
+
+
+def compact_analysis(wb):
+    from openpyxl.styles import Font
+    from openpyxl.worksheet.page import PageMargins
+    from openpyxl.worksheet.pagebreak import RowBreak
+    ws=wb['Анализ']
+    # Typical report fits one A4; long reports keep readable multi-page output.
+    for row in ws:
+        for cell in row:
+            if cell.value is not None:
+                cell.font=Font(name='Arial',size=15 if cell.row==1 else 10 if cell.row==2 else 9,bold=cell.font.bold,color='202A3D')
+        height=ws.row_dimensions[row[0].row].height or 23
+        ws.row_dimensions[row[0].row].height=28 if row[0].row==1 else 23 if row[0].row==2 else 30 if height>=38 else 20 if row[0].fill.fgColor.rgb in ('00E9EDF5','E9EDF5') else 18
+    ws.row_breaks=RowBreak()
+    ws.page_setup.fitToHeight=1 if sum(d.height or 18 for d in ws.row_dimensions.values())<=760 else 0
+    ws.page_setup.fitToWidth=1
+    ws.page_margins=PageMargins(left=.25,right=.25,top=.25,bottom=.3,header=.1,footer=.1)
+    ws.oddFooter.center.text='Анализ · страница &P из &N'
 
 
 def restore_original_questionnaire(output_path, template_path, pension, fio, srzp):
@@ -260,6 +281,8 @@ def restore_original_credits(output_path,template_path,cd,active,recent,old,revo
         source=Path(directory)/'credits.xlsx'
         parser.write_output_legacy_excel(template_path,source,cd.get('pkr'),active,recent,old,revoked=revoked)
         original=load_workbook(source)['Кредиты']
+        cessions=sum(parser.contract_has_cession(c) for c in (list(cd.get('active') or [])+list(recent)+list(old)+list(revoked)))
+        original['A1']=f'ПКО: Действующих учтено {len(active)}   Завершённых {len(recent)+len(old)}   Цессия {cessions}   Отозванных {len(revoked)}   ПКР {cd.get("pkr") if cd.get("pkr") is not None else "—"}'
         wb=load_workbook(output_path);del wb['Кредиты'];ws=wb.create_sheet('Кредиты',1)
         for row in original:
             for cell in row:
