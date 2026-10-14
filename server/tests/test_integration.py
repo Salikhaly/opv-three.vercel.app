@@ -93,6 +93,25 @@ class IntegrationTests(unittest.TestCase):
             self.assertEqual(result["iin"], cd["iin"])
             self.assertGreater(result["srzp"], 0)
 
+    def test_selected_credits_and_no_income_export(self):
+        first = parser.parse_contract_block('КОНТРАКТ 1ЗАЙМ\nСумма периодического платежа: 10000 KZT')
+        second = parser.parse_contract_block('КОНТРАКТ 2ЗАЙМ\nСумма периодического платежа: 25000 KZT')
+        cd = dict(source='pkb', iin='000000000001', pkr=700, active=[first,second])
+        with patch.object(parser, 'extract_any_credit_report', return_value=cd), \
+             patch.object(parser, 'parse_pension_pdf_tables', return_value=dict(rows=rows())):
+            r = parser_core.parse_report(pdf_bytes(),pdf_bytes(),pension_orgs='none',credit_indices='1')
+        self.assertEqual(r['srzp'],0)
+        self.assertEqual(r['monthly_load'],25000)
+        self.assertEqual(len(r['active']),1)
+        wb=load_workbook(io.BytesIO(base64.b64decode(r['excel_b64'])))
+        self.assertEqual(str(wb['Кредиты']['E6'].value),'25000')
+        with patch.object(parser, 'extract_any_credit_report', return_value=cd):
+            r=parser_core.parse_report(pdf_bytes(),credit_indices='none')
+            self.assertEqual(r['monthly_load'],0)
+            self.assertEqual(r['active'],[])
+            with self.assertRaises(ValueError):
+                parser_core.parse_report(pdf_bytes(),credit_indices='99')
+
     def test_actual_credit_and_signed_pension_pdf(self):
         from reportlab.pdfbase import pdfmetrics
         from reportlab.pdfbase.ttfonts import TTFont
