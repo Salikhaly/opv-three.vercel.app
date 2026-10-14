@@ -8,6 +8,8 @@ GET  /health — проверка живости.
 """
 
 import logging
+import time
+from starlette.concurrency import run_in_threadpool
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -63,9 +65,12 @@ async def parse(
     pension: UploadFile = File(None),
     pension_orgs: str = Form(""),
     credit_indices: str = Form(""),
+    include_excel: bool = Form(True),
 ):
     # 1) доступ по подписке (сессия из веб-хаба)
-    auth = lic.check_token(token)
+    started = time.perf_counter()
+    auth = await run_in_threadpool(lic.check_token, token)
+    auth_seconds = time.perf_counter() - started
     if not auth.get("ok"):
         raise HTTPException(status_code=401, detail=auth.get("message", "Доступ запрещён"))
 
@@ -85,7 +90,7 @@ async def parse(
 
     # 3) парсинг (ничего не сохраняем)
     try:
-        result = parser_core.parse_report(data, pdata, pension_orgs=pension_orgs, credit_indices=credit_indices)
+        result = await run_in_threadpool(parser_core.parse_report, data, pdata, pension_orgs=pension_orgs, credit_indices=credit_indices, include_excel=include_excel)
     except ValueError as e:
         return JSONResponse(status_code=422, content={"ok": False, "error": str(e)})
     except Exception as e:
@@ -95,5 +100,6 @@ async def parse(
     if not result.get("ok"):
         return JSONResponse(status_code=422, content=result)
 
+    logging.info("parse finished auth_seconds=%.2f total_seconds=%.2f credit_bytes=%d pension_bytes=%d excel=%s", auth_seconds, time.perf_counter()-started, len(data or b""), len(pdata or b""), include_excel)
     result["client"] = auth.get("clientName")
     return result
