@@ -54,6 +54,15 @@ class IntegrationTests(unittest.TestCase):
             self.assertEqual(client.post('/parse', data={'token': 'test'}, files={'pension': ('p.pdf', pdf_bytes(), 'application/pdf')}).status_code, 200)
             self.assertEqual(client.post('/parse', data={'token': 'test'}, files={'pension': ('p.pdf', b'', 'application/pdf')}).status_code, 400)
 
+    def test_preview_skips_excel_generation(self):
+        cd = dict(source='pkb', iin='000000000001', pkr=700, active=[])
+        with patch.object(parser, 'extract_any_credit_report', return_value=cd), \
+             patch.object(parser, 'write_output_legacy_excel') as write:
+            result = parser_core.parse_report(pdf_bytes(), include_excel=False)
+            write.assert_not_called()
+        self.assertTrue(result['ok'])
+        self.assertIsNone(result['excel_b64'])
+
     def test_orgs_returns_selection(self):
         rs = rows()
         self.assertEqual(len(parser.list_pension_orgs(rs)), 4)
