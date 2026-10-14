@@ -390,7 +390,30 @@ def parse_creditor(block: str) -> Optional[str]:
         r"Источник\s+информации\s*\(\s*Кредитор\s*\)\s*:?\s*(?P<name>[^\r\n]+)",
         block or "", flags=re.IGNORECASE,
     )
-    return sanitize_org_candidate(m.group("name")) if m else None
+    name = sanitize_org_candidate(m.group("name")) if m else None
+    if name:
+        return name
+    # In multi-column PDFs the label itself can be split over three lines.
+    for i, line in enumerate(lines):
+        if not re.match(r"^Источник\b", line, re.IGNORECASE):
+            continue
+        first = re.search(r"\b(?:ТОО|АО|ИП|МФО)\b.*", line, re.IGNORECASE)
+        if not first:
+            continue
+        parts = [clean_org_name(first.group(0)) or ""]
+        for next_line in lines[i + 1:i + 4]:
+            if re.match(r"^(?:Информация\s+по|Дата|БИН|Вид|КОНТРАКТ)\b", next_line, re.IGNORECASE):
+                break
+            if not re.match(r"^(?:информации|\(Кредитор\))", next_line, re.IGNORECASE):
+                break
+            value = re.sub(r"^(?:информации|\(Кредитор\))\s*:?\s*", "", next_line, flags=re.IGNORECASE)
+            value = clean_org_name(value)
+            if value:
+                parts.append(value)
+        candidate = sanitize_org_candidate(" ".join(parts))
+        if is_valid_org_candidate(candidate):
+            return candidate
+    return None
 
 
 def parse_contract_status(block: str) -> Optional[str]:
