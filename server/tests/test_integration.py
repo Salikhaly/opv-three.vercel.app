@@ -29,6 +29,31 @@ def rows():
 
 
 class IntegrationTests(unittest.TestCase):
+    def test_pension_only_and_missing_files(self):
+        pension = dict(iin='000000000002', fio='Test pension', rows=rows())
+        with patch.object(parser, 'extract_any_credit_report') as credit, \
+             patch.object(parser, 'parse_pension_pdf_tables', return_value=pension):
+            result = parser_core.parse_report(pension_pdf=pdf_bytes())
+            credit.assert_not_called()
+        self.assertTrue(result['ok'])
+        self.assertFalse(result['has_credit'])
+        self.assertTrue(result['has_pension'])
+        self.assertEqual(result['iin'], pension['iin'])
+        self.assertGreater(result['srzp'], 0)
+        self.assertEqual(result['active'], [])
+        wb = load_workbook(io.BytesIO(base64.b64decode(result['excel_b64'])))
+        self.assertIn('Company 4', wb['Анкета']['A46'].value)
+        with self.assertRaises(ValueError):
+            parser_core.parse_report()
+        from fastapi.testclient import TestClient
+        import service
+        with patch.object(service.lic, 'check_token', return_value={'ok': True}), \
+             patch.object(parser, 'parse_pension_pdf_tables', return_value=dict(iin='000000000002', rows=rows())):
+            client = TestClient(service.app)
+            self.assertEqual(client.post('/parse', data={'token': 'test'}).status_code, 400)
+            self.assertEqual(client.post('/parse', data={'token': 'test'}, files={'pension': ('p.pdf', pdf_bytes(), 'application/pdf')}).status_code, 200)
+            self.assertEqual(client.post('/parse', data={'token': 'test'}, files={'pension': ('p.pdf', b'', 'application/pdf')}).status_code, 400)
+
     def test_orgs_returns_selection(self):
         rs = rows()
         self.assertEqual(len(parser.list_pension_orgs(rs)), 4)
