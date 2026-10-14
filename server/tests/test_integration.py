@@ -88,8 +88,10 @@ class IntegrationTests(unittest.TestCase):
             self.assertFalse(parser_core.parse_report(pdf_bytes(), pdf_bytes())['ok'])
         with patch.object(parser, 'extract_any_credit_report', return_value=cd), \
              patch.object(parser, 'parse_pension_pdf_tables', return_value=dict(iin='000000000002',rows=rows())):
-            with self.assertRaises(ValueError):
-                parser_core.parse_report(pdf_bytes(), pdf_bytes())
+            result = parser_core.parse_report(pdf_bytes(), pdf_bytes())
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["iin"], cd["iin"])
+            self.assertGreater(result["srzp"], 0)
 
     def test_actual_credit_and_signed_pension_pdf(self):
         from reportlab.pdfbase import pdfmetrics
