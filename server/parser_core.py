@@ -82,7 +82,6 @@ def parse_report(credit_pdf: bytes,
                 return {"ok": False, "error": "Не удалось прочитать пенсионную выписку. Проверьте файл PDF."}
             if not pension.get("rows"):
                 return {"ok": False, "error": "В пенсионной выписке не найдены платежи."}
-            parser.validate_cross_iin(cd.get("iin"), pension.get("iin"), strict=True)
             pension_organizations = parser.list_pension_orgs(pension["rows"])
             pension["rows"] = parser.select_pension_orgs(pension["rows"], pension_orgs)
             srzp = parser.calc_total_srzp(pension["rows"])
