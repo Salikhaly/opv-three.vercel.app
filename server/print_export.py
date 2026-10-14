@@ -247,3 +247,45 @@ def restore_original_questionnaire(output_path, template_path, pension, fio, srz
         ws.page_margins=PageMargins(left=.2,right=.2,top=.2,bottom=.2,header=.1,footer=.1)
         ws.print_area=f'A1:J{last}';ws.print_options.horizontalCentered=True;ws.print_options.verticalCentered=False
         wb.save(output_path)
+
+
+def restore_original_credits(output_path,template_path,cd,active,recent,old,revoked,fio):
+    import tempfile
+    from copy import copy
+    from openpyxl import load_workbook
+    from openpyxl.styles import Font, Alignment
+    from openpyxl.worksheet.page import PageMargins
+    from openpyxl.worksheet.properties import PageSetupProperties
+    with tempfile.TemporaryDirectory() as directory:
+        source=Path(directory)/'credits.xlsx'
+        parser.write_output_legacy_excel(template_path,source,cd.get('pkr'),active,recent,old,revoked=revoked)
+        original=load_workbook(source)['Кредиты']
+        wb=load_workbook(output_path);del wb['Кредиты'];ws=wb.create_sheet('Кредиты',1)
+        for row in original:
+            for cell in row:
+                dst=ws.cell(cell.row,cell.column,cell.value)
+                if cell.has_style:dst.border=copy(cell.border);dst.fill=copy(cell.fill);dst.number_format=cell.number_format
+                dst.font=Font(name='Arial',size=8,bold=cell.font.bold,color='202A3D')
+                dst.alignment=Alignment(horizontal=cell.alignment.horizontal,vertical='center',wrap_text=True)
+        for merged in original.merged_cells:ws.merge_cells(str(merged))
+        # Map values to the actual merged headings of the user's template.
+        for r in list(range(6,24))+list(range(30,40))+list(range(46,56)):
+            for col in range(2,11):parser.safe_set(ws,f'{chr(64+col)}{r}',None)
+        for r,c in enumerate(active[:18],6):
+            for col,val in [('B',c.financing_type),('C',c.creditor),('D',c.contract_amount),('E',c.periodic_payment),('F',c.outstanding),('G',c.current_overdue_days),('I',c.current_overdue_amount)]:parser.safe_set(ws,f'{col}{r}',val)
+        for start,items in [(30,list(recent)+list(revoked)),(46,old)]:
+            for r,c in enumerate(items[:10],start):
+                for col,val in [('B',c.creditor),('E',c.cessionary if parser.has_real_cession(c) else None),('G',c.end_date),('I',c.max_overdue_days),('J',c.max_overdue_amount)]:parser.safe_set(ws,f'{col}{r}',val)
+        for col,width in zip('ABCDEFGHIJ',[4,13,17,11,11,11,7,6,8,12]):ws.column_dimensions[col].width=width
+        for r in range(1,56):ws.row_dimensions[r].height=12
+        ws.row_dimensions[1].height=28
+        if not any('A1' in merged for merged in ws.merged_cells):ws.merge_cells('A1:J1')
+        ws['A1'].font=Font(name='Arial',size=9,bold=True)
+        ws.merge_cells('A2:J2');ws['A2']=fio;ws['A2'].font=Font(name='Arial',size=9,bold=True);ws['A2'].alignment=Alignment(horizontal='center',vertical='center');ws.row_dimensions[2].height=18
+        for r in [4,5,28,29,44,45]:ws.row_dimensions[r].height=18
+        for r in list(range(6,6+min(18,len(active))))+list(range(30,30+min(10,len(recent)+len(revoked))))+list(range(46,46+min(10,len(old)))):ws.row_dimensions[r].height=28
+        ws.sheet_view.showGridLines=False;ws.page_setup.paperSize=ws.PAPERSIZE_A4;ws.page_setup.orientation='portrait';ws.page_setup.fitToWidth=1;ws.page_setup.fitToHeight=1
+        ws.sheet_properties.pageSetUpPr=PageSetupProperties(fitToPage=True)
+        ws.page_margins=PageMargins(left=.2,right=.2,top=.2,bottom=.2,header=.1,footer=.1)
+        ws.print_area='A1:J55';ws.print_options.horizontalCentered=True
+        wb.save(output_path)
